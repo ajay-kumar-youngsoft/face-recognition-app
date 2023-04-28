@@ -1,5 +1,3 @@
-const imageUpload = document.getElementById('imageUpload')
-
 Promise.all([
   faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
   faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
@@ -7,47 +5,58 @@ Promise.all([
 ]).then(start)
 
 async function start() {
-  const container = document.createElement('div')
-  container.style.position = 'relative'
-  document.body.append(container)
   const labeledFaceDescriptors = await loadLabeledImages()
   const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.6)
-  let image
-  let canvas
-  document.body.append('Loaded')
-  imageUpload.addEventListener('change', async () => {
-    if (image) image.remove()
-    if (canvas) canvas.remove()
-    image = await faceapi.bufferToImage(imageUpload.files[0])
-    container.append(image)
-    canvas = faceapi.createCanvasFromMedia(image)
-    container.append(canvas)
-    const displaySize = { width: image.width, height: image.height }
-    faceapi.matchDimensions(canvas, displaySize)
-    const detections = await faceapi.detectAllFaces(image).withFaceLandmarks().withFaceDescriptors()
-    const resizedDetections = faceapi.resizeResults(detections, displaySize)
-    const results = resizedDetections.map(d => faceMatcher.findBestMatch(d.descriptor))
+  document.body.append("Models are loaded!");
+  let video
+  
+  // Get access to the camera
+  try {
+    video = await navigator.mediaDevices.getUserMedia({ video: {} })
+  } catch (e) {
+    console.error('Failed to access the webcam', e)
+    return
+  }
+  
+  // Create a video element and start playing the stream
+  const videoEl = document.createElement('video')
+  videoEl.srcObject = video
+  videoEl.play()
+  
+  // Perform face recognition on each frame of the video
+  setInterval(async () => {
+    const detections = await faceapi.detectAllFaces(videoEl).withFaceLandmarks().withFaceDescriptors()
+    const results = detections.map(d => faceMatcher.findBestMatch(d.descriptor))
     results.forEach((result, i) => {
-      const box = resizedDetections[i].detection.box
-      const drawBox = new faceapi.draw.DrawBox(box, { label: result.toString() })
-      drawBox.draw(canvas)
+      console.log(`Person: ${result.label}, Confidence: ${result.distance}`)
     })
-  })
+  }, 500)
 }
 
-function loadLabeledImages() {
-  const labels = ['Ajay Kumar', 'Amaresh' ,'Black Widow', 'Captain America', 'Captain Marvel', 'Hawkeye', 'Jim Rhodes', 'Thor', 'Tony Stark']
-  return Promise.all(
-    labels.map(async label => {
-      const descriptions = []
-      for (let i = 1; i <= 2; i++) {
-        console.log(`https://raw.githubusercontent.com/ajay-kumar-youngsoft/face-recognition-app/master/labeled_images/${label}/${i}.jpg`);
-        const img = await faceapi.fetchImage(`https://raw.githubusercontent.com/ajay-kumar-youngsoft/face-recognition-app/master/labeled_images/${label}/${i}.jpg`)
-        const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor()
-        descriptions.push(detections.descriptor)
-      }
+async function loadLabeledImages() {
+  const labels = ['Amaresh', 'Ajay Kumar', 'Madhumita', 'Siva Sai'];
+  const descriptions = [];
 
-      return new faceapi.LabeledFaceDescriptors(label, descriptions)
-    })
-  )
+  for (const label of labels) {
+    const labelDescriptions = [];
+
+    for (let i = 1; i <= 5; i++) {
+      const img = await loadImageFromFile(`./labeled_images/${label}/${i}.jpg`);
+      const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+      labelDescriptions.push(detections.descriptor);
+    }
+
+    descriptions.push(new faceapi.LabeledFaceDescriptors(label, labelDescriptions));
+  }
+
+  return descriptions;
+}
+
+async function loadImageFromFile(path) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = path;
+  });
 }
